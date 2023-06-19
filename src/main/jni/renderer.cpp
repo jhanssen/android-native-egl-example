@@ -17,38 +17,29 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <cstring>
+#include <string>
 #include <android/native_window.h> // requires ndk r5 or newer
 #include <EGL/egl.h> // requires ndk r5 or newer
-#include <GLES/gl.h>
+#include <GLES3/gl32.h>
 
 #include "logger.h"
 #include "renderer.h"
 
 #define LOG_TAG "EglSample"
 
-static GLint vertices[][3] = {
-    { -0x10000, -0x10000, -0x10000 },
-    {  0x10000, -0x10000, -0x10000 },
-    {  0x10000,  0x10000, -0x10000 },
-    { -0x10000,  0x10000, -0x10000 },
-    { -0x10000, -0x10000,  0x10000 },
-    {  0x10000, -0x10000,  0x10000 },
-    {  0x10000,  0x10000,  0x10000 },
-    { -0x10000,  0x10000,  0x10000 }
+static float vertices[] = {
+    -1.0, -1.0, -1.0,    +0.0, +0.0, +0.0, +1.0,
+    +1.0, -1.0, -1.0,    +1.0, +0.0, +0.0, +1.0,
+    +1.0, +1.0, -1.0,    +1.0, +1.0, +0.0, +1.0,
+    -1.0, +1.0, -1.0,    +0.0, +1.0, +0.0, +1.0,
+    -1.0, -1.0, +1.0,    +0.0, +0.0, +1.0, +1.0,
+    +1.0, -1.0, +1.0,    +1.0, +0.0, +1.0, +1.0,
+    +1.0, +1.0, +1.0,    +1.0, +1.0, +1.0, +1.0,
+    -1.0, +1.0, +1.0,    +0.0, +1.0, +1.0, +1.0
 };
 
-static GLint colors[][4] = {
-    { 0x00000, 0x00000, 0x00000, 0x10000 },
-    { 0x10000, 0x00000, 0x00000, 0x10000 },
-    { 0x10000, 0x10000, 0x00000, 0x10000 },
-    { 0x00000, 0x10000, 0x00000, 0x10000 },
-    { 0x00000, 0x00000, 0x10000, 0x10000 },
-    { 0x10000, 0x00000, 0x10000, 0x10000 },
-    { 0x10000, 0x10000, 0x10000, 0x10000 },
-    { 0x00000, 0x10000, 0x10000, 0x10000 }
-};
-
-GLubyte indices[] = {
+static GLubyte indices[] = {
     0, 4, 5,    0, 5, 1,
     1, 5, 6,    1, 6, 2,
     2, 6, 7,    2, 7, 3,
@@ -57,9 +48,8 @@ GLubyte indices[] = {
     3, 0, 1,    3, 1, 2
 };
 
-
 Renderer::Renderer()
-    : _msg(MSG_NONE), _display(0), _surface(0), _context(0), _angle(0)
+    : _msg(MSG_NONE), _display(0), _surface(0), _context(0), _angle(0), _inited(false)
 {
     LOG_INFO("Renderer instance created");
     pthread_mutex_init(&_mutex, 0);    
@@ -152,11 +142,14 @@ void Renderer::renderLoop()
 
 bool Renderer::initialize()
 {
+    const EGLint api_version = EGL_OPENGL_ES3_BIT;
     const EGLint attribs[] = {
         EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
         EGL_BLUE_SIZE, 8,
         EGL_GREEN_SIZE, 8,
         EGL_RED_SIZE, 8,
+        EGL_RENDERABLE_TYPE, api_version,
+        EGL_CONFORMANT, api_version,
         EGL_NONE
     };
     EGLDisplay display;
@@ -167,8 +160,8 @@ bool Renderer::initialize()
     EGLContext context;
     EGLint width;
     EGLint height;
-    GLfloat ratio;
-    
+    // GLfloat ratio;
+
     LOG_INFO("Initializing context");
     
     if ((display = eglGetDisplay(EGL_DEFAULT_DISPLAY)) == EGL_NO_DISPLAY) {
@@ -199,8 +192,9 @@ bool Renderer::initialize()
         destroy();
         return false;
     }
-    
-    if (!(context = eglCreateContext(display, config, 0, 0))) {
+
+    EGLint contextAttributes[] = { EGL_CONTEXT_CLIENT_VERSION, 3, EGL_NONE };
+    if (!(context = eglCreateContext(display, config, EGL_NO_CONTEXT, contextAttributes))) {
         LOG_ERROR("eglCreateContext() returned error %d", eglGetError());
         destroy();
         return false;
@@ -224,18 +218,11 @@ bool Renderer::initialize()
     _context = context;
 
     glDisable(GL_DITHER);
-    glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_FASTEST);
     glClearColor(0, 0, 0, 0);
-    glEnable(GL_CULL_FACE);
-    glShadeModel(GL_SMOOTH);
-    glEnable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_DEPTH_TEST);
     
     glViewport(0, 0, width, height);
-
-    ratio = (GLfloat) width / height;
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-    glFrustumf(-ratio, ratio, -1, 1, 1, 10);
 
     return true;
 }
@@ -255,23 +242,112 @@ void Renderer::destroy() {
     return;
 }
 
+#define CHECKERROR                              \
+    err = glGetError();                         \
+    if (err) {                                  \
+        LOG_INFO("glError %d @%d", err, __LINE__);      \
+    }
+
+static inline GLint createProgram(const char* name, const char* vshader, const char* fshader)
+{
+    auto prog = glCreateProgram();
+    GLint cstatus, lstatus;
+    GLenum err;
+
+    auto vs = glCreateShader(GL_VERTEX_SHADER);
+    GLint vshaderlen = strlen(vshader);
+    glShaderSource(vs, 1, &vshader, &vshaderlen);
+    glCompileShader(vs);
+    glGetShaderiv(vs, GL_COMPILE_STATUS, &cstatus);
+    LOG_INFO("vs compile status for %s 0x%x", name, cstatus);
+    if (cstatus == 0) {
+        // error
+        GLint maxLength = 0;
+        glGetShaderiv(vs, GL_INFO_LOG_LENGTH, &maxLength);
+        std::string err;
+        err.resize(maxLength - 1); // subtract '\0'
+        glGetShaderInfoLog(vs, maxLength, &maxLength, err.data());
+        LOG_INFO("vs error '%s'", err.c_str());
+    }
+    glAttachShader(prog, vs);
+    glDeleteShader(vs);
+
+    auto fs = glCreateShader(GL_FRAGMENT_SHADER);
+    GLint fshaderlen = strlen(fshader);
+    glShaderSource(fs, 1, &fshader, &fshaderlen);
+    glCompileShader(fs);
+    glGetShaderiv(fs, GL_COMPILE_STATUS, &cstatus);
+    LOG_INFO("fs compile status for %s 0x%x", name, cstatus);
+    if (cstatus == 0) {
+        // error
+        GLint maxLength = 0;
+        glGetShaderiv(fs, GL_INFO_LOG_LENGTH, &maxLength);
+        std::string err;
+        err.resize(maxLength - 1); // subtract '\0'
+        glGetShaderInfoLog(fs, maxLength, &maxLength, err.data());
+        LOG_INFO("fs error '%s'", err.c_str());
+    }
+    glAttachShader(prog, fs);
+    glDeleteShader(fs);
+
+    glLinkProgram(prog);
+    glGetProgramiv(prog, GL_LINK_STATUS, &lstatus);
+    LOG_INFO("link status for %s 0x%x", name, lstatus);
+
+    return prog;
+}
+
 void Renderer::drawFrame()
 {
+    GLint err;
+    if (!_inited) {
+        _inited = true;
+
+        const char* vshader =
+            "#version 320 es\n"
+            "#pragma shader_stage(vertex)\n"
+            "layout(location=0) in vec3 inPosition;\n"
+            "layout(location=1) in vec4 color;\n"
+            "layout(location=0) out vec4 fragColor;\n"
+            "void main() {\n"
+            "    gl_Position = vec4(inPosition, 1.0);\n"
+            "    fragColor = color;\n"
+            "}\n";
+
+        const char* fshader =
+        "#version 320 es\n"
+        "#pragma shader_stage(fragment)\n"
+        "precision highp float;\n"
+        "precision highp int;\n"
+        "layout(location=0) in vec4 fragColor;\n"
+        "layout(location=0) out vec4 outColor;\n"
+        "void main() {\n"
+        "    outColor = fragColor;\n"
+        "}\n";
+
+        _program = createProgram("render", vshader, fshader);
+        glGenBuffers(2, _buffers);
+        glBindBuffer(GL_ARRAY_BUFFER, _buffers[0]);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, _buffers[1]);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
+        glUseProgram(_program);
+        CHECKERROR;
+    }
+
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
-    glTranslatef(0, 0, -3.0f);
-    glRotatef(_angle, 0, 1, 0);
-    glRotatef(_angle*0.25f, 1, 0, 0);
+    glBindBuffer(GL_ARRAY_BUFFER, _buffers[0]);
+    glEnableVertexAttribArray(0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 28, reinterpret_cast<const void*>(0));
+    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 28, reinterpret_cast<const void*>(12));
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, _buffers[1]);
 
-    glEnableClientState(GL_VERTEX_ARRAY);
-    glEnableClientState(GL_COLOR_ARRAY);
-    
     glFrontFace(GL_CW);
-    glVertexPointer(3, GL_FIXED, 0, vertices);
-    glColorPointer(4, GL_FIXED, 0, colors);
-    glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_BYTE, indices);
+    // glUniform1f(0, _angle);
+    glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_BYTE, nullptr);
+    CHECKERROR;
 
     _angle += 1.2f;    
 }

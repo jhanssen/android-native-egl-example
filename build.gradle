@@ -24,9 +24,10 @@ android {
     buildToolsVersion "29.0.2"
 
     defaultConfig {
+        minSdkVersion 25
         ndk {
             moduleName "nativeegl"
-            ldLibs "log", "android", "EGL", "GLESv1_CM"
+            ldLibs "log", "android", "EGL", "GLESv3"
         }
     }
 

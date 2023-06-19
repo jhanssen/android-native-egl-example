@@ -54,6 +54,9 @@ private:
     EGLSurface _surface;
     EGLContext _context;
     GLfloat _angle;
+    GLuint _angleLoc, _program;
+    GLuint _buffers[2];
+    bool _inited;
     
     // RenderLoop is called in a rendering thread started in start() method
     // It creates rendering context and renders scene until stop() is called
