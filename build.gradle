@@ -1,19 +1,27 @@
 
 buildscript {
     repositories {
+        google()
         mavenCentral()
     }
 
     dependencies {
-        classpath 'com.android.tools.build:gradle:0.14+'
+        classpath 'com.android.tools.build:gradle:4.0.1'
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
     }
 }
 
 apply plugin: 'com.android.application'
 
 android {
-    compileSdkVersion 21
-    buildToolsVersion "21.1.1"
+    compileSdkVersion 29
+    buildToolsVersion "29.0.2"
 
     defaultConfig {
         ndk {
@@ -21,9 +29,15 @@ android {
             ldLibs "log", "android", "EGL", "GLESv1_CM"
         }
     }
+
+    lintOptions {
+        quiet true
+        abortOnError false
+        checkReleaseBuilds false
+    }
 }
 
-task wrapper(type: Wrapper) {
-    gradleVersion = '2.1'
+wrapper {
+    gradleVersion = '6.1.1'
 }
 
