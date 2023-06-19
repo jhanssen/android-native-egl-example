@@ -1,0 +1,4 @@
+build
+.gradle
+.cxx
+*.~undo-tree~

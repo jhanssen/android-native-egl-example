@@ -1,0 +1,5 @@
+project(nativeegl)
+cmake_minimum_required(VERSION 3.10.1)
+include_directories(${CMAKE_CURRENT_LIST_DIR})
+add_library(nativeegl SHARED renderer.cpp jniapi.cpp)
+target_link_libraries(nativeegl log android EGL GLESv1_CM)
