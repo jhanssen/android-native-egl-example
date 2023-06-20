@@ -53,7 +53,7 @@ private:
     EGLDisplay _display;
     EGLSurface _surface;
     EGLContext _context;
-    GLfloat _angle;
+    GLfloat _angle, _ratio;
     GLuint _angleLoc, _program;
     GLuint _buffers[2];
     bool _inited;

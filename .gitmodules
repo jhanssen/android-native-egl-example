@@ -1,0 +1,3 @@
+[submodule "src/main/jni/glm"]
+	path = src/main/jni/glm
+	url = https://github.com/g-truc/glm.git

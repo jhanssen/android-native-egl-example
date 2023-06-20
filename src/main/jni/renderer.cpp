@@ -22,6 +22,9 @@
 #include <android/native_window.h> // requires ndk r5 or newer
 #include <EGL/egl.h> // requires ndk r5 or newer
 #include <GLES3/gl32.h>
+#include <glm/mat4x4.hpp>
+#include <glm/ext/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
 #include "logger.h"
 #include "renderer.h"
@@ -49,7 +52,7 @@ static GLubyte indices[] = {
 };
 
 Renderer::Renderer()
-    : _msg(MSG_NONE), _display(0), _surface(0), _context(0), _angle(0), _inited(false)
+    : _msg(MSG_NONE), _display(0), _surface(0), _context(0), _angle(0), _ratio(0), _inited(false)
 {
     LOG_INFO("Renderer instance created");
     pthread_mutex_init(&_mutex, 0);    
@@ -216,11 +219,12 @@ bool Renderer::initialize()
     _display = display;
     _surface = surface;
     _context = context;
+    _ratio = (GLfloat) width / height;
 
     glDisable(GL_DITHER);
     glClearColor(0, 0, 0, 0);
-    glDisable(GL_CULL_FACE);
-    glDisable(GL_DEPTH_TEST);
+    glEnable(GL_CULL_FACE);
+    glEnable(GL_DEPTH_TEST);
     
     glViewport(0, 0, width, height);
 
@@ -306,24 +310,26 @@ void Renderer::drawFrame()
         const char* vshader =
             "#version 320 es\n"
             "#pragma shader_stage(vertex)\n"
+            "layout(location=0) uniform mat4 projection;\n"
+            "layout(location=1) uniform mat4 modelview;\n"
             "layout(location=0) in vec3 inPosition;\n"
             "layout(location=1) in vec4 color;\n"
             "layout(location=0) out vec4 fragColor;\n"
             "void main() {\n"
-            "    gl_Position = vec4(inPosition, 1.0);\n"
+            "    gl_Position = (vec4(inPosition, 1.0) * modelview) * projection;\n"
             "    fragColor = color;\n"
             "}\n";
 
         const char* fshader =
-        "#version 320 es\n"
-        "#pragma shader_stage(fragment)\n"
-        "precision highp float;\n"
-        "precision highp int;\n"
-        "layout(location=0) in vec4 fragColor;\n"
-        "layout(location=0) out vec4 outColor;\n"
-        "void main() {\n"
-        "    outColor = fragColor;\n"
-        "}\n";
+            "#version 320 es\n"
+            "#pragma shader_stage(fragment)\n"
+            "precision highp float;\n"
+            "precision highp int;\n"
+            "layout(location=0) in vec4 fragColor;\n"
+            "layout(location=0) out vec4 outColor;\n"
+            "void main() {\n"
+            "    outColor = fragColor;\n"
+            "}\n";
 
         _program = createProgram("render", vshader, fshader);
         glGenBuffers(2, _buffers);
@@ -332,6 +338,7 @@ void Renderer::drawFrame()
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, _buffers[1]);
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
         glUseProgram(_program);
+
         CHECKERROR;
     }
 
@@ -343,6 +350,14 @@ void Renderer::drawFrame()
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 28, reinterpret_cast<const void*>(0));
     glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 28, reinterpret_cast<const void*>(12));
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, _buffers[1]);
+
+    const auto radians = glm::radians(_angle);
+    auto projection = glm::frustum(-_ratio, _ratio, -1.0f, 1.0f, 1.0f, 10.0f);
+    auto modelview = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -3.0f));
+    modelview = glm::rotate(modelview, radians, glm::vec3(0.0f, 1.0f, 0.0f));
+    modelview = glm::rotate(modelview, radians * 0.25f, glm::vec3(1.0f, 0.0f, 0.0f));
+    glUniformMatrix4fv(0, 1, GL_TRUE, glm::value_ptr(projection));
+    glUniformMatrix4fv(1, 1, GL_TRUE, glm::value_ptr(modelview));
 
     glFrontFace(GL_CW);
     // glUniform1f(0, _angle);
