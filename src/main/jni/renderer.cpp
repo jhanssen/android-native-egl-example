@@ -30,6 +30,11 @@
 #include "renderer.h"
 
 #define LOG_TAG "EglSample"
+#define CHECKERROR                                      \
+    err = glGetError();                                 \
+    if (err) {                                          \
+        LOG_INFO("glError %d @%d", err, __LINE__);      \
+    }
 
 static float vertices[] = {
     -1.0, -1.0, -1.0,    +0.0, +0.0, +0.0, +1.0,
@@ -51,8 +56,57 @@ static GLubyte indices[] = {
     3, 0, 1,    3, 1, 2
 };
 
+static inline GLint createProgram(const char* name, const char* vshader, const char* fshader)
+{
+    auto prog = glCreateProgram();
+    GLint cstatus, lstatus;
+    GLenum err;
+
+    auto vs = glCreateShader(GL_VERTEX_SHADER);
+    GLint vshaderlen = strlen(vshader);
+    glShaderSource(vs, 1, &vshader, &vshaderlen);
+    glCompileShader(vs);
+    glGetShaderiv(vs, GL_COMPILE_STATUS, &cstatus);
+    LOG_INFO("vs compile status for %s 0x%x", name, cstatus);
+    if (cstatus == 0) {
+        // error
+        GLint maxLength = 0;
+        glGetShaderiv(vs, GL_INFO_LOG_LENGTH, &maxLength);
+        std::string err;
+        err.resize(maxLength - 1); // subtract '\0'
+        glGetShaderInfoLog(vs, maxLength, &maxLength, err.data());
+        LOG_INFO("vs error '%s'", err.c_str());
+    }
+    glAttachShader(prog, vs);
+    glDeleteShader(vs);
+
+    auto fs = glCreateShader(GL_FRAGMENT_SHADER);
+    GLint fshaderlen = strlen(fshader);
+    glShaderSource(fs, 1, &fshader, &fshaderlen);
+    glCompileShader(fs);
+    glGetShaderiv(fs, GL_COMPILE_STATUS, &cstatus);
+    LOG_INFO("fs compile status for %s 0x%x", name, cstatus);
+    if (cstatus == 0) {
+        // error
+        GLint maxLength = 0;
+        glGetShaderiv(fs, GL_INFO_LOG_LENGTH, &maxLength);
+        std::string err;
+        err.resize(maxLength - 1); // subtract '\0'
+        glGetShaderInfoLog(fs, maxLength, &maxLength, err.data());
+        LOG_INFO("fs error '%s'", err.c_str());
+    }
+    glAttachShader(prog, fs);
+    glDeleteShader(fs);
+
+    glLinkProgram(prog);
+    glGetProgramiv(prog, GL_LINK_STATUS, &lstatus);
+    LOG_INFO("link status for %s 0x%x", name, lstatus);
+
+    return prog;
+}
+
 Renderer::Renderer()
-    : _msg(MSG_NONE), _display(0), _surface(0), _context(0), _angle(0), _ratio(0), _inited(false)
+    : _msg(MSG_NONE), _display(0), _surface(0), _context(0), _angle(0), _ratio(0)
 {
     LOG_INFO("Renderer instance created");
     pthread_mutex_init(&_mutex, 0);    
@@ -98,8 +152,6 @@ void Renderer::setWindow(ANativeWindow *window)
 
     return;
 }
-
-
 
 void Renderer::renderLoop()
 {
@@ -228,6 +280,41 @@ bool Renderer::initialize()
     
     glViewport(0, 0, width, height);
 
+    const char* vshader =
+    "#version 320 es\n"
+    "#pragma shader_stage(vertex)\n"
+    "layout(location=0) uniform mat4 projection;\n"
+    "layout(location=1) uniform mat4 modelview;\n"
+    "layout(location=0) in vec3 inPosition;\n"
+    "layout(location=1) in vec4 color;\n"
+    "layout(location=0) out vec4 fragColor;\n"
+    "void main() {\n"
+    "    gl_Position = (vec4(inPosition, 1.0) * modelview) * projection;\n"
+    "    fragColor = color;\n"
+    "}\n";
+
+    const char* fshader =
+    "#version 320 es\n"
+    "#pragma shader_stage(fragment)\n"
+    "precision highp float;\n"
+    "precision highp int;\n"
+    "layout(location=0) in vec4 fragColor;\n"
+    "layout(location=0) out vec4 outColor;\n"
+    "void main() {\n"
+    "    outColor = fragColor;\n"
+    "}\n";
+
+    _program = createProgram("render", vshader, fshader);
+    glGenBuffers(2, _buffers);
+    glBindBuffer(GL_ARRAY_BUFFER, _buffers[0]);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, _buffers[1]);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
+    glUseProgram(_program);
+
+    GLint err;
+    CHECKERROR;
+
     return true;
 }
 
@@ -246,102 +333,8 @@ void Renderer::destroy() {
     return;
 }
 
-#define CHECKERROR                              \
-    err = glGetError();                         \
-    if (err) {                                  \
-        LOG_INFO("glError %d @%d", err, __LINE__);      \
-    }
-
-static inline GLint createProgram(const char* name, const char* vshader, const char* fshader)
-{
-    auto prog = glCreateProgram();
-    GLint cstatus, lstatus;
-    GLenum err;
-
-    auto vs = glCreateShader(GL_VERTEX_SHADER);
-    GLint vshaderlen = strlen(vshader);
-    glShaderSource(vs, 1, &vshader, &vshaderlen);
-    glCompileShader(vs);
-    glGetShaderiv(vs, GL_COMPILE_STATUS, &cstatus);
-    LOG_INFO("vs compile status for %s 0x%x", name, cstatus);
-    if (cstatus == 0) {
-        // error
-        GLint maxLength = 0;
-        glGetShaderiv(vs, GL_INFO_LOG_LENGTH, &maxLength);
-        std::string err;
-        err.resize(maxLength - 1); // subtract '\0'
-        glGetShaderInfoLog(vs, maxLength, &maxLength, err.data());
-        LOG_INFO("vs error '%s'", err.c_str());
-    }
-    glAttachShader(prog, vs);
-    glDeleteShader(vs);
-
-    auto fs = glCreateShader(GL_FRAGMENT_SHADER);
-    GLint fshaderlen = strlen(fshader);
-    glShaderSource(fs, 1, &fshader, &fshaderlen);
-    glCompileShader(fs);
-    glGetShaderiv(fs, GL_COMPILE_STATUS, &cstatus);
-    LOG_INFO("fs compile status for %s 0x%x", name, cstatus);
-    if (cstatus == 0) {
-        // error
-        GLint maxLength = 0;
-        glGetShaderiv(fs, GL_INFO_LOG_LENGTH, &maxLength);
-        std::string err;
-        err.resize(maxLength - 1); // subtract '\0'
-        glGetShaderInfoLog(fs, maxLength, &maxLength, err.data());
-        LOG_INFO("fs error '%s'", err.c_str());
-    }
-    glAttachShader(prog, fs);
-    glDeleteShader(fs);
-
-    glLinkProgram(prog);
-    glGetProgramiv(prog, GL_LINK_STATUS, &lstatus);
-    LOG_INFO("link status for %s 0x%x", name, lstatus);
-
-    return prog;
-}
-
 void Renderer::drawFrame()
 {
-    GLint err;
-    if (!_inited) {
-        _inited = true;
-
-        const char* vshader =
-            "#version 320 es\n"
-            "#pragma shader_stage(vertex)\n"
-            "layout(location=0) uniform mat4 projection;\n"
-            "layout(location=1) uniform mat4 modelview;\n"
-            "layout(location=0) in vec3 inPosition;\n"
-            "layout(location=1) in vec4 color;\n"
-            "layout(location=0) out vec4 fragColor;\n"
-            "void main() {\n"
-            "    gl_Position = (vec4(inPosition, 1.0) * modelview) * projection;\n"
-            "    fragColor = color;\n"
-            "}\n";
-
-        const char* fshader =
-            "#version 320 es\n"
-            "#pragma shader_stage(fragment)\n"
-            "precision highp float;\n"
-            "precision highp int;\n"
-            "layout(location=0) in vec4 fragColor;\n"
-            "layout(location=0) out vec4 outColor;\n"
-            "void main() {\n"
-            "    outColor = fragColor;\n"
-            "}\n";
-
-        _program = createProgram("render", vshader, fshader);
-        glGenBuffers(2, _buffers);
-        glBindBuffer(GL_ARRAY_BUFFER, _buffers[0]);
-        glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, _buffers[1]);
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
-        glUseProgram(_program);
-
-        CHECKERROR;
-    }
-
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     glBindBuffer(GL_ARRAY_BUFFER, _buffers[0]);
@@ -362,6 +355,8 @@ void Renderer::drawFrame()
     glFrontFace(GL_CW);
     // glUniform1f(0, _angle);
     glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_BYTE, nullptr);
+
+    GLint err;
     CHECKERROR;
 
     _angle += 1.2f;    
