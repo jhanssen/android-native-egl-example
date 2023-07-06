@@ -17,6 +17,7 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <cstdio>
 #include <cstring>
 #include <string>
 #include <android/native_window.h> // requires ndk r5 or newer
@@ -55,6 +56,73 @@ static GLubyte indices[] = {
     4, 7, 6,    4, 6, 5,
     3, 0, 1,    3, 1, 2
 };
+
+void glDebugCallback(GLenum source, GLenum type, GLuint, GLenum severity,
+                     GLsizei debugMessageLength, const GLchar *debugMessage, const void *)
+{
+    if(source == GL_DEBUG_SOURCE_APPLICATION)
+        return;
+
+    bool error = false;
+    std::string severity_str;
+    switch(severity) {
+    case GL_DEBUG_SEVERITY_HIGH:
+        severity_str = "GL_DEBUG_SEVERITY_HIGH";
+        break;
+    case GL_DEBUG_SEVERITY_MEDIUM:
+        severity_str = "GL_DEBUG_SEVERITY_MEDIUM";
+        break;
+    case GL_DEBUG_SEVERITY_LOW:
+        severity_str = "GL_DEBUG_SEVERITY_LOW";
+        break;
+    case GL_DEBUG_SEVERITY_NOTIFICATION:
+        severity_str = "GL_DEBUG_SEVERITY_NOTIFICATION";
+        break;
+    }
+
+    std::string type_str;
+    switch(type) {
+    case GL_DEBUG_TYPE_ERROR:
+        type_str = "GL_DEBUG_TYPE_ERROR";
+        error = true;
+        break;
+    case GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR:
+        type_str = "GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR";
+        error = true;
+        break;
+    case GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR:
+        type_str = "GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR";
+        error = true;
+        break;
+    case GL_DEBUG_TYPE_PORTABILITY:
+        type_str = "GL_DEBUG_TYPE_PORTABILITY";
+        break;
+    case GL_DEBUG_TYPE_PERFORMANCE:
+        type_str = "GL_DEBUG_TYPE_PERFORMANCE";
+        break;
+    case GL_DEBUG_TYPE_MARKER:
+        type_str = "GL_DEBUG_TYPE_MARKER";
+        break;
+    case GL_DEBUG_TYPE_PUSH_GROUP:
+        type_str = "GL_DEBUG_TYPE_PUSH_GROUP";
+        break;
+    case GL_DEBUG_TYPE_POP_GROUP:
+        type_str = "GL_DEBUG_TYPE_POP_GROUP";
+        break;
+    case GL_DEBUG_TYPE_OTHER:
+        type_str = "GL_DEBUG_TYPE_OTHER";
+        break;
+    }
+
+    std::string messageSuffix;
+    if(!severity_str.empty())
+        messageSuffix += " " + severity_str;
+    if(!type_str.empty())
+        messageSuffix += " (" + type_str + ")";
+
+    const std::string msg = std::string(debugMessage, debugMessageLength) + messageSuffix;
+    LOG_INFO("GL MESSAGE %s\n", msg.c_str());
+}
 
 static inline GLint createProgram(const char* name, const char* vshader, const char* fshader)
 {
@@ -272,6 +340,12 @@ bool Renderer::initialize()
     _surface = surface;
     _context = context;
     _ratio = (GLfloat) width / height;
+
+    glEnable(GL_DEBUG_OUTPUT);
+    glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
+    glDebugMessageCallback(glDebugCallback, nullptr);
+    GLuint unusedIds = 0;
+    glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, &unusedIds, GL_TRUE);
 
     glDisable(GL_DITHER);
     glClearColor(0, 0, 0, 0);
