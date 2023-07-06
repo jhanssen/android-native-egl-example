@@ -280,37 +280,37 @@ bool Renderer::initialize()
     
     glViewport(0, 0, width, height);
 
-    const char* vshader =
-    "#version 320 es\n"
-    "#pragma shader_stage(vertex)\n"
-    "layout(location=0) uniform mat4 projection;\n"
-    "layout(location=1) uniform mat4 modelview;\n"
-    "layout(location=0) in vec3 inPosition;\n"
-    "layout(location=1) in vec4 color;\n"
-    "layout(location=0) out vec4 fragColor;\n"
-    "void main() {\n"
-    "    gl_Position = (vec4(inPosition, 1.0) * modelview) * projection;\n"
-    "    fragColor = color;\n"
-    "}\n";
+    GLuint tex;
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexStorage2D(GL_TEXTURE_2D, 4, GL_R8, 32, 32);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-    const char* fshader =
-    "#version 320 es\n"
-    "#pragma shader_stage(fragment)\n"
-    "precision highp float;\n"
-    "precision highp int;\n"
-    "layout(location=0) in vec4 fragColor;\n"
-    "layout(location=0) out vec4 outColor;\n"
-    "void main() {\n"
-    "    outColor = fragColor;\n"
-    "}\n";
+    GLuint fbo;
+    glGenFramebuffers(1, &fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
+    glColorMaski(0, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    const GLfloat clearColor[] = { 0.5f, 0.0f, 0.0f, 0.0f };
+    glClearBufferfv(GL_COLOR, 0, clearColor);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDeleteFramebuffers(1, &fbo);
 
-    _program = createProgram("render", vshader, fshader);
-    glGenBuffers(2, _buffers);
-    glBindBuffer(GL_ARRAY_BUFFER, _buffers[0]);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, _buffers[1]);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
-    glUseProgram(_program);
+    GLuint buf;
+    glGenBuffers(1, &buf);
+    glBindBuffer(GL_ARRAY_BUFFER, buf);
+    glBufferData(GL_ARRAY_BUFFER, 7968, nullptr, GL_DYNAMIC_COPY);
+
+    glGenFramebuffers(1, &fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glPixelStorei(GL_PACK_ROW_LENGTH, 256);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
+    glReadBuffer(GL_COLOR_ATTACHMENT0);
+    glReadPixels(0, 0, 32, 32, GL_RED, GL_UNSIGNED_BYTE, nullptr);
+    glPixelStorei(GL_PACK_ROW_LENGTH, 0);
 
     GLint err;
     CHECKERROR;
@@ -335,31 +335,6 @@ void Renderer::destroy() {
 
 void Renderer::drawFrame()
 {
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-    glBindBuffer(GL_ARRAY_BUFFER, _buffers[0]);
-    glEnableVertexAttribArray(0);
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 28, reinterpret_cast<const void*>(0));
-    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 28, reinterpret_cast<const void*>(12));
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, _buffers[1]);
-
-    const auto radians = glm::radians(_angle);
-    auto projection = glm::frustum(-_ratio, _ratio, -1.0f, 1.0f, 1.0f, 10.0f);
-    auto modelview = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -3.0f));
-    modelview = glm::rotate(modelview, radians, glm::vec3(0.0f, 1.0f, 0.0f));
-    modelview = glm::rotate(modelview, radians * 0.25f, glm::vec3(1.0f, 0.0f, 0.0f));
-    glUniformMatrix4fv(0, 1, GL_TRUE, glm::value_ptr(projection));
-    glUniformMatrix4fv(1, 1, GL_TRUE, glm::value_ptr(modelview));
-
-    glFrontFace(GL_CW);
-    // glUniform1f(0, _angle);
-    glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_BYTE, nullptr);
-
-    GLint err;
-    CHECKERROR;
-
-    _angle += 1.2f;    
 }
 
 void* Renderer::threadStartCallback(void *myself)
