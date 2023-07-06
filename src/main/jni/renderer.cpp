@@ -380,11 +380,13 @@ bool Renderer::initialize()
 
     glGenFramebuffers(1, &fbo);
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, buf);
     glPixelStorei(GL_PACK_ROW_LENGTH, 256);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
     glReadBuffer(GL_COLOR_ATTACHMENT0);
     glReadPixels(0, 0, 32, 32, GL_RED, GL_UNSIGNED_BYTE, nullptr);
     glPixelStorei(GL_PACK_ROW_LENGTH, 0);
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
 
     GLint err;
     CHECKERROR;
